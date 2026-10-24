@@ -22,7 +22,8 @@
 var CLIENT_ID     = "528165468683-1m8e24ei2oi7llh9jii0hhp245g0h9me.apps.googleusercontent.com";
 var SHARED_SECRET = "PUT_A_LONG_RANDOM_SECRET_HERE";  // collector write secret; set live in Apps Script editor, not in public repo
 var FARM_SECRET   = "PUT_FARM_HANDOFF_SECRET_HERE";   // HMAC handoff from mt5.forexcool.com (must match License Manager env FARM_SECRET)
-var STALE_SEC     = 300;
+var STALE_SEC     = 300;      // no report this long -> shown with a "stale" badge
+var HIDE_SEC      = 86400;    // no report this long (1 day) -> hidden from views + pruned from the Sheet
 
 var HEADERS = [
   "email","login","port","label","balance","equity","net_profit","win_rate",
@@ -54,6 +55,18 @@ function colIndex_() {
   var m = {}; for (var i = 0; i < HEADERS.length; i++) m[HEADERS[i]] = i; return m;
 }
 
+// Delete Sheet rows with no report for > HIDE_SEC (bottom-up so indexes stay valid).
+function prune_() {
+  var sh = sheet_();
+  var data = sh.getDataRange().getValues();
+  var ci = colIndex_();
+  var now = Math.floor(Date.now() / 1000);
+  for (var r = data.length - 1; r >= 1; r--) {
+    if (!data[r][ci.login]) continue;
+    if (now - Number(data[r][ci.ts] || 0) > HIDE_SEC) sh.deleteRow(r + 1);
+  }
+}
+
 // ---------------- write (collector -> here) ----------------
 
 function doPost(e) {
@@ -77,6 +90,7 @@ function doPost(e) {
       if (rowOf[key]) sh.getRange(rowOf[key], 1, 1, HEADERS.length).setValues([row]);
       else           sh.appendRow(row);
     });
+    prune_();   // drop ports with no report for > HIDE_SEC
     return json_({ ok: true, n: accounts.length });
   } catch (err) {
     return json_({ error: String(err) });
@@ -114,6 +128,7 @@ function rows_() {
     var o = {};
     HEADERS.forEach(function (h) { o[h] = row[ci[h]]; });
     o.age_sec = now - Number(o.ts || 0);
+    if (o.age_sec > HIDE_SEC) continue;      // port long gone (no EA) -> not shown
     o.stale = o.age_sec > STALE_SEC;
     out.push(o);
   }
