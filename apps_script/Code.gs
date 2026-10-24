@@ -88,8 +88,16 @@ function doGet(e) {
   var mode = (e.parameter.mode || "overview");
   var cb   = e.parameter.callback || "";
   var out;
-  if (mode === "mine") out = mine_(e.parameter.token);
-  else                 out = overview_();
+  if (mode === "mine") {
+    out = mine_(e.parameter.token);               // per-user: NEVER cached
+  } else {
+    // overview is shared + public -> cache 60s so 50 open dashboards all hit
+    // cache and the sheet is read at most once per minute, not once per request.
+    var cache = CacheService.getScriptCache();
+    var hit = cache.get("overview");
+    if (hit) { out = JSON.parse(hit); }
+    else { out = overview_(); cache.put("overview", JSON.stringify(out), 60); }
+  }
   return cb ? jsonp_(cb, out) : json_(out);
 }
 

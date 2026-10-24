@@ -50,7 +50,7 @@
   <div class="meta">
     <span id="who" class="hide">👤 <b id="email">—</b> <button class="btn" onclick="signOut()">ออก</button></span>
     <div id="gbtn"></div>
-    <span>อัปเดต <b id="updated">—</b></span>
+    <span>อัปเดต <b id="updated">—</b> <span style="opacity:.6">(ทุก 60s)</span></span>
   </div>
 </header>
 
@@ -238,7 +238,7 @@ function renderMine(){
 }
 
 // ---- boot ----
-window.addEventListener("load", ()=>{ initGsi(); loadOverview(); setInterval(loadOverview,30000); });
+window.addEventListener("load", ()=>{ initGsi(); loadOverview(); setInterval(loadOverview,60000); });
 </script>
 </body>
 </html>
