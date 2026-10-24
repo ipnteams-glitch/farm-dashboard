@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Farm Dashboard</title>
+<script src="./lightweight-charts.js"></script>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2330; --line:#283040;
+    --txt:#e6edf3; --muted:#8b949e; --green:#3fb950; --red:#f85149;
+    --accent:#58a6ff; --gold:#d8a657; --amber:#d29922;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--txt);font-size:14px}
+  header{display:flex;align-items:center;gap:16px;padding:10px 18px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+  header h1{font-size:16px;margin:0;color:var(--gold)}
+  .meta{display:flex;gap:16px;font-size:12px;color:var(--muted);flex-wrap:wrap;margin-left:auto;align-items:center}
+  .meta b{color:var(--txt)}
+  main{padding:18px;max-width:1500px;margin:0 auto}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px}
+  .card .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+  .card .v{font-size:22px;font-weight:600;margin-top:6px}
+  .pos{color:var(--green)} .neg{color:var(--red)}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:18px}
+  .panel h2{font-size:13px;color:var(--muted);margin:0 0 12px;text-transform:uppercase;letter-spacing:.5px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:right;padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{color:var(--muted);font-weight:500}
+  th:first-child,td:first-child{text-align:left}
+  tr:hover td{background:var(--panel2)}
+  .tag{font-size:11px;padding:2px 7px;border-radius:4px;background:var(--panel2);border:1px solid var(--line)}
+  .stale{color:var(--amber);border-color:var(--amber)}
+  .live{color:var(--green);border-color:var(--green)}
+  .ctrl{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+  .ctrl label{font-size:12px;color:var(--muted)}
+  .ctrl input{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:6px 8px;font-size:13px}
+  .ctrl button{background:var(--accent);border:none;color:#06121f;border-radius:6px;padding:6px 12px;font-size:13px;cursor:pointer;font-weight:600}
+  #chart{height:300px}
+</style>
+</head>
+<body>
+<header>
+  <h1>⚡ Farm Dashboard</h1>
+  <div class="meta">
+    <span>Updated <b id="updated">—</b></span>
+    <span><b id="nacc">0</b> accounts</span>
+    <span id="autostate">auto-refresh 30s</span>
+  </div>
+</header>
+
+<main>
+  <div class="cards" id="totals"></div>
+
+  <div class="panel">
+    <h2>ช่วงเวลา (History range)</h2>
+    <div class="ctrl">
+      <label>ตั้งแต่ <input type="date" id="from"></label>
+      <label>ถึง <input type="date" id="to"></label>
+      <button onclick="render()">แสดง</button>
+      <span style="color:var(--muted);font-size:12px">กราฟ P/L สะสม + ตารางรายพอร์ต กรองตามช่วงนี้</span>
+    </div>
+    <div id="chart"></div>
+  </div>
+
+  <div class="panel">
+    <h2>รายพอร์ต (per account)</h2>
+    <div style="overflow-x:auto">
+      <table id="tbl"><thead></thead><tbody></tbody></table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Daily P/L (รวมทุกพอร์ต ในช่วง)</h2>
+    <div style="overflow-x:auto">
+      <table id="daily"><thead><tr><th>วันที่</th><th>P/L</th><th>สะสม</th></tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+</main>
+
+<script>
+let DATA = null, chart = null, series = null;
+const fmt = (n,d=2) => (n==null?"—":Number(n).toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d}));
+const cls = n => n>0?"pos":(n<0?"neg":"");
+
+async function load(){
+  try{
+    const r = await fetch("./data.json?t=" + Date.now());
+    DATA = await r.json();
+  }catch(e){ document.getElementById("updated").textContent = "load error"; return; }
+  // default date range: earliest start_date -> today
+  const starts = DATA.accounts.map(a=>a.start_date).filter(Boolean).sort();
+  const minStart = (starts[0]||"2026-01-01").replace(/\./g,"-");
+  if(!document.getElementById("from").value) document.getElementById("from").value = minStart;
+  if(!document.getElementById("to").value)   document.getElementById("to").value   = new Date().toISOString().slice(0,10);
+  document.getElementById("updated").textContent = DATA.generated_iso || "—";
+  document.getElementById("nacc").textContent = DATA.accounts.length;
+  render();
+}
+
+function inRange(day, from, to){ return (!from||day>=from) && (!to||day<=to); }
+
+function render(){
+  if(!DATA) return;
+  const show = DATA.show || {port:true,login:true,broker:false};
+  const from = document.getElementById("from").value;
+  const to   = document.getElementById("to").value;
+
+  // ----- totals cards -----
+  const t = DATA.totals||{};
+  const tc = document.getElementById("totals"); tc.innerHTML="";
+  const cards = [
+    ["Total Equity", fmt(t.equity), ""],
+    ["Net Profit", fmt(t.net_profit), cls(t.net_profit)],
+    ["Floating", fmt(t.floating), cls(t.floating)],
+    ["Win Rate", fmt(t.win_rate,1)+"%", ""],
+    ["Trades", t.trades??0, ""],
+    ["Max Equity DD", fmt(t.max_equity_dd), "neg"],
+  ];
+  for(const [k,v,c] of cards)
+    tc.insertAdjacentHTML("beforeend",`<div class="card"><div class="k">${k}</div><div class="v ${c}">${v}</div></div>`);
+
+  // ----- per-account table -----
+  const cols = [];
+  if(show.port)  cols.push(["port","Port"]);
+  if(show.login) cols.push(["login","Login"]);
+  if(show.broker){ cols.push(["server","Server"]); cols.push(["broker","Broker"]); }
+  cols.push(["label","Label"],["balance","Balance"],["equity","Equity"],
+            ["net_profit","Net"],["win_rate","Win%"],["profit_factor","PF"],
+            ["closed_max_dd","Closed DD"],["max_equity_dd","RT MaxDD"],
+            ["max_equity_dd_pct","MaxDD%"],["cur_dd","Cur DD"],["_status","Status"]);
+  const thead = document.querySelector("#tbl thead");
+  const tbody = document.querySelector("#tbl tbody");
+  thead.innerHTML = "<tr>"+cols.map(c=>`<th>${c[1]}</th>`).join("")+"</tr>";
+  tbody.innerHTML = "";
+  for(const a of DATA.accounts){
+    const tds = cols.map(([k,_])=>{
+      if(k==="_status"){
+        return a.stale ? `<td><span class="tag stale">stale ${a.age_sec}s</span></td>`
+                       : `<td><span class="tag live">live</span></td>`;
+      }
+      let v = a[k];
+      if(["balance","equity","net_profit","closed_max_dd","max_equity_dd","cur_dd","profit_factor"].includes(k)) v=fmt(v);
+      else if(k==="win_rate"||k==="max_equity_dd_pct") v=fmt(v,1)+(k.includes("pct")?"%":"");
+      else if(v==null||v==="") v="—";
+      const c = (k==="net_profit")?cls(a.net_profit):(k.includes("dd")?"neg":"");
+      return `<td class="${c}">${v}</td>`;
+    });
+    tbody.insertAdjacentHTML("beforeend","<tr>"+tds.join("")+"</tr>");
+  }
+
+  // ----- combined daily within range -----
+  const byday = {};
+  for(const a of DATA.accounts)
+    for(const d of (a.daily||[]))
+      if(inRange(d.day, from, to))
+        byday[d.day] = (byday[d.day]||0) + d.profit;
+  const days = Object.keys(byday).sort();
+
+  // daily table
+  const db = document.querySelector("#daily tbody"); db.innerHTML="";
+  let cum=0;
+  const line=[];
+  for(const d of days){
+    cum += byday[d];
+    line.push({time:d, value:+cum.toFixed(2)});
+    db.insertAdjacentHTML("beforeend",
+      `<tr><td>${d}</td><td class="${cls(byday[d])}">${fmt(byday[d])}</td><td class="${cls(cum)}">${fmt(cum)}</td></tr>`);
+  }
+
+  // chart (cumulative P/L)
+  const el = document.getElementById("chart");
+  if(!chart){
+    chart = LightweightCharts.createChart(el, {
+      autoSize:true,
+      layout:{background:{color:"transparent"},textColor:"#8b949e"},
+      grid:{vertLines:{color:"#283040"},horzLines:{color:"#283040"}},
+      rightPriceScale:{borderColor:"#283040"},
+      timeScale:{borderColor:"#283040"},
+    });
+    series = chart.addAreaSeries({lineColor:"#58a6ff",topColor:"rgba(88,166,255,.4)",bottomColor:"rgba(88,166,255,0)",lineWidth:2});
+  }
+  series.setData(line);
+  chart.timeScale().fitContent();
+}
+
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>
