@@ -20,7 +20,8 @@
  */
 
 var CLIENT_ID     = "528165468683-1m8e24ei2oi7llh9jii0hhp245g0h9me.apps.googleusercontent.com";
-var SHARED_SECRET = "PUT_A_LONG_RANDOM_SECRET_HERE";  // set to your real secret in the Apps Script editor, not in the public repo
+var SHARED_SECRET = "PUT_A_LONG_RANDOM_SECRET_HERE";  // collector write secret; set live in Apps Script editor, not in public repo
+var FARM_SECRET   = "PUT_FARM_HANDOFF_SECRET_HERE";   // HMAC handoff from mt5.forexcool.com (must match License Manager env FARM_SECRET)
 var STALE_SEC     = 300;
 
 var HEADERS = [
@@ -138,7 +139,8 @@ function overview_() {
 }
 
 function mine_(token) {
-  var email = verify_(token);
+  // accept either a signed License Manager handoff token OR a Google ID token
+  var email = verifyLm_(token) || verify_(token);
   if (!email) return { error: "unauthorized" };
   var rs = rows_().filter(function (a) {
     return String(a.email).toLowerCase() === email.toLowerCase();
@@ -178,6 +180,27 @@ function verify_(token) {
     if (String(t.aud) !== String(CLIENT_ID)) return null;      // token meant for us
     if (t.email_verified !== true && t.email_verified !== "true") return null;
     return t.email || null;
+  } catch (e) { return null; }
+}
+
+// Verify a signed handoff token from the License Manager:
+//   payloadB64url . HMAC_SHA256(payloadB64url, FARM_SECRET) base64url(no pad)
+// payload = {email, exp}. Returns email if signature + exp are valid, else null.
+function verifyLm_(token) {
+  if (!token || token.indexOf(".") < 0) return null;
+  if (!FARM_SECRET || FARM_SECRET.indexOf("PUT_") === 0) return null;
+  try {
+    var dot = token.lastIndexOf(".");
+    var payloadB64 = token.substring(0, dot);
+    var sig = token.substring(dot + 1);
+    var raw = Utilities.computeHmacSha256Signature(payloadB64, FARM_SECRET);
+    var calc = Utilities.base64EncodeWebSafe(raw).replace(/=+$/, "");
+    if (calc !== sig) return null;
+    var mod = payloadB64.length % 4;
+    var pad = payloadB64 + (mod ? "====".slice(mod) : "");
+    var json = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(pad)).getDataAsString());
+    if (!json.exp || json.exp < Math.floor(Date.now() / 1000)) return null;
+    return json.email || null;
   } catch (e) { return null; }
 }
 

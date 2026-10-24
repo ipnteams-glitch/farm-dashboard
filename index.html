@@ -238,7 +238,12 @@ function renderMine(){
 }
 
 // ---- boot ----
-window.addEventListener("load", ()=>{ initGsi(); loadOverview(); setInterval(loadOverview,60000); });
+window.addEventListener("load", ()=>{
+  initGsi(); loadOverview(); setInterval(loadOverview,60000);
+  // signed handoff from mt5.forexcool.com (#t=<token>): skip Google sign-in
+  const ht = new URLSearchParams(location.hash.slice(1)).get("t");
+  if(ht){ TOKEN = ht; loadMine(); }
+});
 </script>
 </body>
 </html>
