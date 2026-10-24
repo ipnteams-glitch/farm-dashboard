@@ -19,8 +19,8 @@
  * Read-only w.r.t. trading. Pure data store/serve.
  */
 
-var CLIENT_ID     = "PUT_YOUR_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com";
-var SHARED_SECRET = "PUT_A_LONG_RANDOM_SECRET_HERE";
+var CLIENT_ID     = "528165468683-1m8e24ei2oi7llh9jii0hhp245g0h9me.apps.googleusercontent.com";
+var SHARED_SECRET = "PUT_A_LONG_RANDOM_SECRET_HERE";  // set to your real secret in the Apps Script editor, not in the public repo
 var STALE_SEC     = 300;
 
 var HEADERS = [

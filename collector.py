@@ -28,9 +28,18 @@ from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-# ---- CONFIG: fill after deploying Apps Script ----
-WEBAPP_URL    = "PASTE_APPS_SCRIPT_EXEC_URL_HERE"   # .../exec
-SHARED_SECRET = "PUT_A_LONG_RANDOM_SECRET_HERE"     # must match Code.gs
+# ---- CONFIG ----
+# Secrets live in config.local.json (gitignored) so they never reach the public
+# repo. Copy config.local.example.json -> config.local.json and fill it in.
+WEBAPP_URL    = "PASTE_APPS_SCRIPT_EXEC_URL_HERE"   # .../exec  (overridden by config.local.json)
+SHARED_SECRET = "PUT_A_LONG_RANDOM_SECRET_HERE"     # must match Code.gs (overridden by config.local.json)
+
+_cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.local.json")
+if os.path.exists(_cfg_path):
+    with open(_cfg_path, "r", encoding="utf-8") as _f:
+        _cfg = json.load(_f)
+    WEBAPP_URL    = _cfg.get("WEBAPP_URL", WEBAPP_URL)
+    SHARED_SECRET = _cfg.get("SHARED_SECRET", SHARED_SECRET)
 
 # ---- where EA report files live (add paths for extra machines) ----
 GLOBS = [
