@@ -3,155 +3,108 @@
 Farm dashboard collector.
 
 Globs every terminal's  MQL5\\Files\\farm_report\\report_<login>.json  (written
-by the FarmReporter EA), merges them into one data.json, REDACTS fields the
-published page must not show, then git-commits + pushes to the GitHub Pages repo.
+by the FarmReporter EA) and POSTs them to the Apps Script backend, which stores
+them in a Google Sheet and serves per-user (auth-gated) + anonymized overview.
 
-Read-only w.r.t. MT5. Never touches trading. Stdlib only.
+Privacy lives in the backend now: the page shows only aggregate totals until a
+user signs in with Google; per-account rows are returned ONLY to the matching
+email. So the collector sends full data (incl. email) to the backend only.
+
+Read-only w.r.t. MT5. Stdlib only.
 
 Usage:
-    python collector.py              # one shot: build + push
-    python collector.py --loop 30    # rebuild + push every 30s
-    python collector.py --no-push    # build data.json only, skip git
+    python collector.py              # one shot
+    python collector.py --loop 30    # every 30s
+    python collector.py --dry        # build payload, print, do NOT send
 """
 
 import argparse
 import glob
 import json
 import os
-import subprocess
-import sys
 import time
+import urllib.request
 from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-# ---- where EA report files live (add paths for extra machines here) ----
+# ---- CONFIG: fill after deploying Apps Script ----
+WEBAPP_URL    = "PASTE_APPS_SCRIPT_EXEC_URL_HERE"   # .../exec
+SHARED_SECRET = "PUT_A_LONG_RANDOM_SECRET_HERE"     # must match Code.gs
+
+# ---- where EA report files live (add paths for extra machines) ----
 GLOBS = [
-    # main attended terminal (7A4204 = ATFXGM Terminal2)
     r"C:\Users\User\AppData\Roaming\MetaQuotes\Terminal\7A420438090D9D1897FB4FB211B5EAE9\MQL5\Files\farm_report\report_*.json",
-    # portable farm
     r"C:\MT5_Portable_Farm\mt5_*\MQL5\Files\farm_report\report_*.json",
 ]
 
-# ---- privacy: what the PUBLIC page may show ----
-SHOW_PORT   = True    # port/terminal number
-SHOW_LOGIN  = True    # account login number
-SHOW_BROKER = False   # server + broker company  (hidden by default)
-
-STALE_SEC   = 300     # report older than this is flagged stale (still shown)
-
-DATA_JSON   = os.path.join(HERE, "data.json")
+STALE_SEC = 300   # skip reports older than this (EA/terminal offline)
 
 
-def redact(acc):
-    """Strip fields the published page must not reveal."""
-    if not SHOW_LOGIN:
-        acc.pop("login", None)
-    if not SHOW_PORT:
-        acc.pop("port", None)
-    if not SHOW_BROKER:
-        acc.pop("server", None)
-        acc.pop("broker", None)
-    return acc
-
-
-def collect():
+def gather():
     now = int(datetime.now(timezone.utc).timestamp())
     files = []
     for pat in GLOBS:
         files.extend(glob.glob(pat))
-
-    accounts = []
-    seen = set()
+    accounts, seen = [], set()
     for fp in files:
         try:
             with open(fp, "r", encoding="ansi", errors="replace") as f:
-                acc = json.load(f)
+                a = json.load(f)
         except Exception as e:
             print(f"  skip {fp}: {e}")
             continue
-        login = acc.get("login")
-        if login in seen:           # same account reported by 2 paths -> keep newest
+        if not a.get("email"):          # EA refuses to run without valid email; guard anyway
+            continue
+        login = a.get("login")
+        if login in seen:
             continue
         seen.add(login)
-        acc["stale"] = (now - int(acc.get("ts", 0))) > STALE_SEC
-        acc["age_sec"] = now - int(acc.get("ts", 0))
-        accounts.append(redact(dict(acc)))
-
-    accounts.sort(key=lambda a: a.get("port", 0) or a.get("login", 0))
-
-    # combined totals (sums over live accounts)
-    def s(key):
-        return round(sum(float(a.get(key, 0) or 0) for a in accounts), 2)
-
-    totals = {
-        "accounts": len(accounts),
-        "balance": s("balance"),
-        "equity": s("equity"),
-        "net_profit": s("net_profit"),
-        "floating": s("floating"),
-        "trades": int(sum(int(a.get("trades", 0) or 0) for a in accounts)),
-        "wins": int(sum(int(a.get("wins", 0) or 0) for a in accounts)),
-        "losses": int(sum(int(a.get("losses", 0) or 0) for a in accounts)),
-        "max_equity_dd": round(max([float(a.get("max_equity_dd", 0) or 0)
-                                    for a in accounts] + [0.0]), 2),
-    }
-    tw, tl = totals["wins"], totals["losses"]
-    totals["win_rate"] = round(tw / (tw + tl) * 100, 1) if (tw + tl) else 0.0
-
-    out = {
-        "generated_ts": now,
-        "generated_iso": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "show": {"port": SHOW_PORT, "login": SHOW_LOGIN, "broker": SHOW_BROKER},
-        "totals": totals,
-        "accounts": accounts,
-    }
-    with open(DATA_JSON, "w", encoding="utf-8") as f:
-        json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
-    print(f"  data.json: {len(accounts)} account(s), "
-          f"equity={totals['equity']} net={totals['net_profit']}")
-    return len(accounts)
+        if now - int(a.get("ts", 0)) > STALE_SEC:
+            print(f"  stale, skip login {login}")
+            continue
+        accounts.append(a)
+    return accounts
 
 
-def git_push():
-    def run(*args):
-        return subprocess.run(["git", "-C", HERE, *args],
-                              capture_output=True, text=True)
-    run("add", "data.json")
-    st = run("status", "--porcelain", "data.json")
-    if not st.stdout.strip():
-        print("  no change, skip push")
+def send(accounts):
+    payload = json.dumps({"secret": SHARED_SECRET, "accounts": accounts}).encode()
+    req = urllib.request.Request(WEBAPP_URL, data=payload,
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        body = r.read().decode(errors="replace")
+    print("  backend:", body[:200])
+
+
+def once(dry):
+    accs = gather()
+    print(f"  {len(accs)} live account(s): " +
+          ", ".join(str(a.get("login")) for a in accs))
+    if dry:
+        print(json.dumps(accs, ensure_ascii=False)[:800])
         return
-    msg = "data: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    run("commit", "-m", msg)
-    p = run("push", "origin", "HEAD")
-    if p.returncode != 0:
-        print("  push FAIL:", p.stderr.strip()[:300])
-    else:
-        print("  pushed:", msg)
+    if "PASTE_APPS_SCRIPT" in WEBAPP_URL:
+        print("  WEBAPP_URL not set; skip send (edit collector.py)")
+        return
+    if accs:
+        send(accs)
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--loop", type=int, default=0, help="rebuild+push every N sec")
-    ap.add_argument("--no-push", action="store_true")
+    ap.add_argument("--loop", type=int, default=0)
+    ap.add_argument("--dry", action="store_true")
     a = ap.parse_args()
-
-    def once():
-        collect()
-        if not a.no_push:
-            git_push()
-
     if a.loop > 0:
-        print(f"collector loop every {a.loop}s  (Ctrl+C to stop)")
+        print(f"collector loop every {a.loop}s (Ctrl+C to stop)")
         while True:
             try:
-                once()
+                once(a.dry)
             except Exception as e:
                 print("  error:", e)
             time.sleep(a.loop)
     else:
-        once()
+        once(a.dry)
 
 
 if __name__ == "__main__":

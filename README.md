@@ -1,63 +1,96 @@
-# Farm Dashboard
+# Farm Dashboard (multi-user)
 
-A multi-port MT5 dashboard. Each terminal runs the read-only `FarmReporter` EA,
-which writes a JSON report of its account. A Python collector merges every
-report into `data.json` and pushes it to this GitHub Pages site, where the
-static page renders all accounts together.
+A multi-port, multi-user MT5 dashboard.
 
-**Read-only.** Neither the EA nor the collector places, modifies, or closes any
-order. The EA only reads account info and trade history; the collector only
-reads report files and runs git.
+- Each MT5 terminal runs the read-only `FarmReporter` EA. The EA requires a valid
+  **owner email** (input `UserEmail`) — if the email is empty or malformed, the EA
+  stops immediately and does nothing.
+- A Python **collector** gathers every terminal's report and POSTs it to a Google
+  **Apps Script** backend, which stores it in a Google Sheet.
+- A static page on **GitHub Pages** shows an **anonymized overview** to everyone,
+  and — after **Google Sign-In** — shows each person only their own ports
+  (one person can own many ports; they are grouped by the email in the EA).
+
+**Read-only.** Nothing here places, modifies, or closes an order.
+
+## Why a backend (privacy)
+
+GitHub Pages is static and cannot hide data: any file it serves is public. To keep
+one user from reading another user's balances, per-account data lives only in the
+Apps Script backend. The page gets detailed rows only through `mode=mine`, which
+the backend returns **only** after verifying a Google ID token whose email matches
+the row. The public `mode=overview` returns aggregate totals with no login, email,
+or per-port rows.
+
+```
+EA (UserEmail) ── report_<login>.json ──► collector.py ──POST(secret)──► Apps Script ──► Google Sheet
+                                                                              │
+GitHub Pages (static UI) ──JSONP GET──────────────────────────────────────────┤
+   mode=overview  → anonymized totals (public)                                  │
+   mode=mine&token → that user's ports only (Google ID token verified) ◄────────┘
+```
 
 ## Pieces
 
-| File | Where it runs | Job |
+| File | Runs on | Job |
 |---|---|---|
-| `FarmReporter.mq5` | each MT5 terminal (one chart) | writes `MQL5\Files\farm_report\report_<login>.json` every few seconds; tracks real equity drawdown on every tick |
-| `collector.py` | the machine that can see every terminal's `Files` folder | globs all report files, redacts hidden fields, writes `data.json`, git-commits + pushes |
-| `index.html` + `lightweight-charts.js` | GitHub Pages (static) | fetches `data.json`, shows totals, per-account table, history range, cumulative P/L chart |
+| `FarmReporter.mq5` | each MT5 terminal (one chart) | validates `UserEmail`; writes `report_<login>.json`; tracks real per-tick equity drawdown |
+| `apps_script/Code.gs` | Google Apps Script web app | stores reports in a Sheet; serves `overview` (public) and `mine` (token-verified) |
+| `collector.py` | a machine that can see the terminals' `Files` folders | globs reports, POSTs them to the backend |
+| `index.html` + `lightweight-charts.js` | GitHub Pages | overview + Google Sign-In + per-user ports, history range, cumulative P/L chart |
 
-## EA inputs (`FarmReporter`)
+## Setup
 
-- `StartDate` — history lookback start (default `2026.01.01`). Closed-trade stats are computed from this date to now.
-- `PublishIntervalS` — how often the report file is rewritten (default 5s).
-- `PortTag` — a port/terminal number you assign per terminal (shown on the page).
-- `Label` — optional display label.
+### 1. Google OAuth client (for Sign-In)
+1. Google Cloud Console → **APIs & Services → Credentials → Create credentials →
+   OAuth client ID → Web application**.
+2. **Authorized JavaScript origins**: `https://ipnteams-glitch.github.io`
+   (add `http://localhost:8751` too if you test locally).
+3. Copy the **Client ID** (`...apps.googleusercontent.com`).
 
-**Drawdown note:** the real per-tick equity drawdown (`max_equity_dd`) can only be
-measured going forward — it starts accumulating the moment the EA first runs on a
-terminal and is persisted in `dd_state_<login>.txt` so it survives restarts. It
-cannot be back-filled from history (history has no tick-by-tick equity). The
-history-based `closed_max_dd` is derived from the closed-trade curve and does go
-back to `StartDate`.
+### 2. Apps Script backend
+1. script.google.com → **New project** → paste `apps_script/Code.gs`.
+2. Set `CLIENT_ID` (from step 1) and `SHARED_SECRET` (any long random string).
+3. Run `setup()` once (authorize the scopes). The log prints the data Sheet URL.
+4. **Deploy → New deployment → Web app**: *Execute as* **Me**, *Who has access*
+   **Anyone**. Copy the **/exec** URL.
 
-## Privacy
+### 3. Fill config
+- `collector.py`: set `WEBAPP_URL` = the /exec URL, `SHARED_SECRET` = same as Code.gs.
+- `index.html` `CFG`: set `WEBAPP_URL` = the /exec URL, `CLIENT_ID` = the OAuth client ID.
+- Commit + push `index.html` so GitHub Pages serves the configured page.
 
-GitHub Pages is public. The collector redacts fields before publishing. Edit the
-flags at the top of `collector.py`:
+### 4. Deploy the EA
+`FarmReporter.mq5` is in `MQL5\Experts\SGH\`. Compile in MetaEditor (Terminal2,
+data folder `7A4204`), attach to one chart per terminal, and set:
 
-```python
-SHOW_PORT   = True    # port/terminal number
-SHOW_LOGIN  = True    # account login number
-SHOW_BROKER = False   # server + broker company
+- `UserEmail` — the owner's email (**required**; bad email = EA won't run).
+- `PortTag` — a port number you assign per terminal.
+- `StartDate` — history lookback start (default `2026.01.01`).
+
+### 5. Run the collector
+```
+python collector.py            # one shot
+python collector.py --loop 30  # every 30s
+python collector.py --dry      # show payload, send nothing
 ```
 
-`balance` / `equity` / profit are always shown — they are the point of the
-dashboard. Only publish to a repo whose exposure you accept.
+## EA email validation
 
-## Run the collector
+No regex in MQL5, so the EA checks manually: non-empty, length 6–254, no spaces,
+no `;` or `,`, exactly one `@`, a valid local part and domain, and an alphabetic
+TLD of 2+ chars. Example rejected: `d;affisa wiyrtrt@gmail.com a;fjkash`
+(spaces + `;`). On failure the EA prints/alerts and returns `INIT_FAILED`.
 
-```
-python collector.py            # build data.json once + push
-python collector.py --loop 30  # rebuild + push every 30 seconds
-python collector.py --no-push  # build only, no git
-```
+## Drawdown note
 
-Add terminals on other machines by appending their report glob to `GLOBS` in
-`collector.py` (or run a collector on each machine against the same repo).
+`max_equity_dd` is the real equity drawdown measured **tick by tick, going forward
+only** — it starts when the EA first runs and is persisted in
+`dd_state_<login>.txt` so it survives restarts. It cannot be back-filled (history
+has no tick equity). `closed_max_dd` is derived from the closed-trade curve and
+does go back to `StartDate`.
 
-## Deploy EA
+## Add terminals on other machines
 
-`FarmReporter.mq5` lives in `MQL5\Experts\SGH\`. Compile it in MetaEditor
-(ATFXGM Terminal2 data folder `7A4204`), then attach it to any one chart on each
-terminal you want reported. Set `PortTag` per terminal.
+Append the machine's report glob to `GLOBS` in `collector.py`, or run a second
+collector on that machine against the same `WEBAPP_URL`.
