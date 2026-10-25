@@ -42,6 +42,23 @@
   #chart{height:300px}
   .hide{display:none}
   .note{color:var(--amber);font-size:12px}
+  @media(max-width:640px){
+    main{padding:12px}
+    header{padding:8px 12px;gap:8px}
+    header h1{font-size:14px}
+    .meta{font-size:11px;gap:8px;width:100%;margin-left:0}
+    .cards{grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px}
+    .card{padding:10px}
+    .card .v{font-size:17px}
+    .panel{padding:10px;margin-bottom:12px}
+    .panel h2{font-size:12px}
+    #chart{height:210px}
+    .ctrl{gap:6px}
+    .ctrl label{display:flex;flex-direction:column;flex:1 1 42%;font-size:11px;gap:3px}
+    .ctrl input{width:100%}
+    .ctrl button{width:100%;flex-basis:100%;margin-top:2px}
+    th,td{padding:5px 6px;font-size:12px}
+  }
 </style>
 </head>
 <body>
@@ -128,7 +145,6 @@ async function loadOverview(){
       ["พอร์ตรวม", o.ports??0, ""],
       ["Equity รวม", fmt(o.equity), ""],
       ["Net Profit รวม", fmt(o.net_profit), cls(o.net_profit)],
-      ["Win Rate", fmt(o.win_rate,1)+"%", ""],
       ["เทรดรวม", o.total_trades??0, ""],
       ["Max Equity DD", fmt(o.max_equity_dd), "neg"],
     ];
@@ -192,9 +208,7 @@ function renderMine(){
   document.getElementById("myCards").innerHTML = [
     ["Equity รวม", fmt(t.equity), ""],
     ["Net Profit", fmt(t.net_profit), cls(t.net_profit)],
-    ["Floating", fmt(t.floating), cls(t.floating)],
     ["พอร์ต", t.accounts??0, ""],
-    ["Win Rate", fmt(t.win_rate,1)+"%", ""],
     ["Max Equity DD", fmt(t.max_equity_dd), "neg"],
   ].map(([k,v,c])=>`<div class="card"><div class="k">${k}</div><div class="v ${c}">${v}</div></div>`).join("");
 
