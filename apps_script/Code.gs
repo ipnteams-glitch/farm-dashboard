@@ -82,15 +82,26 @@ function doPost(e) {
     for (var r = 1; r < data.length; r++) rowOf[String(data[r][ci.login])] = r + 1;
 
     accounts.forEach(function (a) {
+      var key = String(a.login);
+      // keep the ALL-TIME max DD server-side: never let an incoming lower value
+      // (e.g. EA reinstalled on a fresh terminal with reset dd_state) overwrite it.
+      if (rowOf[key]) {
+        var old = data[rowOf[key] - 1];
+        if ((Number(old[ci.max_equity_dd]) || 0) > (Number(a.max_equity_dd) || 0)) {
+          a.max_equity_dd     = old[ci.max_equity_dd];
+          a.max_equity_dd_pct = old[ci.max_equity_dd_pct];
+        }
+      }
       var row = HEADERS.map(function (h) {
         if (h === "daily_json") return JSON.stringify(a.daily || []);
         return (a[h] === undefined || a[h] === null) ? "" : a[h];
       });
-      var key = String(a.login);
       if (rowOf[key]) sh.getRange(rowOf[key], 1, 1, HEADERS.length).setValues([row]);
-      else           sh.appendRow(row);
+      else            sh.appendRow(row);
     });
-    prune_();   // drop ports with no report for > HIDE_SEC
+    // NO prune: rows are KEPT so MaxDD is never lost. rows_() hides stale ports
+    // (age > HIDE_SEC) from views; the row + its MaxDD stay in the Sheet and come
+    // back when the EA reports again. Delete a row by hand in the Sheet if needed.
     return json_({ ok: true, n: accounts.length });
   } catch (err) {
     return json_({ error: String(err) });
