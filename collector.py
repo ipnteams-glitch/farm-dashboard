@@ -42,7 +42,7 @@ COLLECTOR_TOKEN = ""                                 # per-user token from the d
 
 _cfg_path = os.path.join(HERE, "config.local.json")
 if os.path.exists(_cfg_path):
-    with open(_cfg_path, "r", encoding="utf-8") as _f:
+    with open(_cfg_path, "r", encoding="utf-8-sig") as _f:   # utf-8-sig: tolerate a Notepad BOM
         _cfg = json.load(_f)
     WEBAPP_URL      = _cfg.get("WEBAPP_URL", WEBAPP_URL)
     SHARED_SECRET   = _cfg.get("SHARED_SECRET", SHARED_SECRET)
