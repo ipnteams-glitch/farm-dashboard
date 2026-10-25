@@ -206,9 +206,9 @@ function renderMine(){
   if(!MINE) return;
   const t = MINE.totals||{};
   document.getElementById("myCards").innerHTML = [
-    ["Equity รวม", fmt(t.equity), ""],
+    ["Balance Total", fmt(t.balance), ""],
+    ["Equity Total", fmt(t.equity), ""],
     ["Net Profit", fmt(t.net_profit), cls(t.net_profit)],
-    ["พอร์ต", t.accounts??0, ""],
     ["Max Equity DD", fmt(t.max_equity_dd), "neg"],
   ].map(([k,v,c])=>`<div class="card"><div class="k">${k}</div><div class="v ${c}">${v}</div></div>`).join("");
 
