@@ -215,6 +215,14 @@ async function loadMine(){
 
 function inRange(d,f,t){ return (!f||d>=f)&&(!t||d<=t); }
 
+async function clearPort(login){
+  if(!confirm("ลบข้อมูลพอร์ต "+login+" ?\n(จะเก็บใหม่เมื่อ EA ส่งข้อมูลรอบถัดไป)")) return;
+  try{
+    const r = await jsonp({mode:"clear", token:TOKEN, login:login});
+    if(r && r.ok){ loadMine(); } else { alert("ลบไม่สำเร็จ: "+((r&&r.error)||"")); }
+  }catch(e){ alert("ลบไม่สำเร็จ"); }
+}
+
 function renderMine(){
   if(!MINE) return;
   const tok=document.getElementById("ctok"); if(tok) tok.value = MINE.collector_token || "";
@@ -232,7 +240,7 @@ function renderMine(){
 
   // table
   const cols=[["login","Login"],["label","Label"],["net_profit","Net"],["_gain","Gain%"],
-    ["balance","Balance"],["max_equity_dd","MaxDD"]];
+    ["balance","Balance"],["max_equity_dd","MaxDD"],["_clear","Clear"]];
   document.querySelector("#tbl thead").innerHTML="<tr>"+cols.map(c=>`<th>${c[1]}</th>`).join("")+"</tr>";
   const tb=document.querySelector("#tbl tbody"); tb.innerHTML="";
   const rows=[...(MINE.accounts||[])].sort((a,b)=>
@@ -241,6 +249,7 @@ function renderMine(){
     tb.insertAdjacentHTML("beforeend","<tr>"+cols.map(([k])=>{
       if(k==="_status") return a.stale?`<td><span class="tag stale">stale ${a.age_sec}s</span></td>`:`<td><span class="tag live">live</span></td>`;
       if(k==="_gain"){ const g=(+a.balance)?(+a.net_profit)/(+a.balance)*100:0; return `<td class="${cls(g)}">${fmt(g,2)}%</td>`; }
+      if(k==="_clear"){ return `<td><button class="btn" style="padding:3px 8px" onclick="clearPort('${a.login}')">Clear</button></td>`; }
       let v=a[k];
       if(["balance","equity","net_profit","closed_max_dd","max_equity_dd","cur_dd","profit_factor"].includes(k)) v=fmt(v);
       else if(k==="win_rate"||k==="max_equity_dd_pct") v=fmt(v,1)+(k.includes("pct")?"%":"");

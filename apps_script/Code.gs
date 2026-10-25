@@ -132,6 +132,8 @@ function doGet(e) {
   var out;
   if (mode === "mine") {
     out = mine_(e.parameter.token);               // per-user: NEVER cached
+  } else if (mode === "clear") {
+    out = clearPort_(e.parameter.token, e.parameter.login);   // delete own port's row
   } else {
     // overview is shared + public -> cache 60s so 50 open dashboards all hit
     // cache and the sheet is read at most once per minute, not once per request.
@@ -141,6 +143,25 @@ function doGet(e) {
     else { out = overview_(); cache.put("overview", JSON.stringify(out), 60); }
   }
   return cb ? jsonp_(cb, out) : json_(out);
+}
+
+// Delete ONE port's row — only the owner (token email must match the row email).
+// The EA re-creates the row on its next report ("collect new").
+function clearPort_(token, login) {
+  var email = verifyLm_(token) || verify_(token);
+  if (!email) return { error: "unauthorized" };
+  email = String(email).toLowerCase();
+  var sh = sheet_();
+  var data = sh.getDataRange().getValues();
+  var ci = colIndex_();
+  for (var r = data.length - 1; r >= 1; r--) {
+    if (String(data[r][ci.login]) === String(login) &&
+        String(data[r][ci.email]).toLowerCase() === email) {
+      sh.deleteRow(r + 1);
+      return { ok: true, cleared: String(login) };
+    }
+  }
+  return { ok: false, error: "not found or not yours" };
 }
 
 function rows_() {
