@@ -22,8 +22,8 @@
 var CLIENT_ID     = "528165468683-1m8e24ei2oi7llh9jii0hhp245g0h9me.apps.googleusercontent.com";
 var SHARED_SECRET = "PUT_A_LONG_RANDOM_SECRET_HERE";  // collector write secret; set live in Apps Script editor, not in public repo
 var FARM_SECRET   = "PUT_FARM_HANDOFF_SECRET_HERE";   // HMAC handoff from mt5.forexcool.com (must match License Manager env FARM_SECRET)
-var STALE_SEC     = 300;      // no report this long -> shown with a "stale" badge
-var HIDE_SEC      = 86400;    // no report this long (1 day) -> hidden from views + pruned from the Sheet
+var STALE_SEC     = 20;       // no report this long -> shown with a "stale" badge
+var HIDE_SEC      = 60;       // no report this long (1 min) -> hidden from views + pruned from the Sheet
 
 var HEADERS = [
   "email","login","port","label","balance","equity","net_profit","win_rate",
