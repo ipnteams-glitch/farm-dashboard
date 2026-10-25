@@ -36,15 +36,17 @@ else:
 # ---- CONFIG ----
 # Secrets live in config.local.json (gitignored) so they never reach the public
 # repo. Copy config.local.example.json -> config.local.json and fill it in.
-WEBAPP_URL    = "PASTE_APPS_SCRIPT_EXEC_URL_HERE"   # .../exec  (overridden by config.local.json)
-SHARED_SECRET = "PUT_A_LONG_RANDOM_SECRET_HERE"     # must match Code.gs (overridden by config.local.json)
+WEBAPP_URL    = "PASTE_APPS_SCRIPT_EXEC_URL_HERE"   # .../exec  (the backend URL; not secret — may be baked into the exe)
+SHARED_SECRET = ""                                   # ADMIN only (writes any email). Leave empty for customers.
+COLLECTOR_TOKEN = ""                                 # per-user token from the dashboard (writes ONLY your own email)
 
 _cfg_path = os.path.join(HERE, "config.local.json")
 if os.path.exists(_cfg_path):
     with open(_cfg_path, "r", encoding="utf-8") as _f:
         _cfg = json.load(_f)
-    WEBAPP_URL    = _cfg.get("WEBAPP_URL", WEBAPP_URL)
-    SHARED_SECRET = _cfg.get("SHARED_SECRET", SHARED_SECRET)
+    WEBAPP_URL      = _cfg.get("WEBAPP_URL", WEBAPP_URL)
+    SHARED_SECRET   = _cfg.get("SHARED_SECRET", SHARED_SECRET)
+    COLLECTOR_TOKEN = _cfg.get("TOKEN", _cfg.get("COLLECTOR_TOKEN", COLLECTOR_TOKEN))
 
 # ---- where EA report files live: AUTO-DETECT every MT5 terminal on this PC ----
 # No path editing needed. Covers normally-installed terminals (under %APPDATA%)
@@ -95,12 +97,17 @@ def gather():
 
 
 def send(accounts):
-    payload = json.dumps({"secret": SHARED_SECRET, "accounts": accounts}).encode()
+    body = {"accounts": accounts}
+    if COLLECTOR_TOKEN:
+        body["token"] = COLLECTOR_TOKEN          # per-user (customer)
+    else:
+        body["secret"] = SHARED_SECRET           # admin
+    payload = json.dumps(body).encode()
     req = urllib.request.Request(WEBAPP_URL, data=payload,
                                  headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=30) as r:
-        body = r.read().decode(errors="replace")
-    print("  backend:", body[:200])
+        resp = r.read().decode(errors="replace")
+    print("  backend:", resp[:200])
 
 
 def once(dry):
@@ -111,7 +118,11 @@ def once(dry):
         print(json.dumps(accs, ensure_ascii=False)[:800])
         return
     if "PASTE_APPS_SCRIPT" in WEBAPP_URL:
-        print("  WEBAPP_URL not set; skip send (edit collector.py)")
+        print("  WEBAPP_URL not set.")
+        return
+    if not COLLECTOR_TOKEN and not SHARED_SECRET:
+        print("  No TOKEN/SHARED_SECRET set -> put your TOKEN in config.local.json "
+              '({"TOKEN": "<from the dashboard>"})')
         return
     if accs:
         send(accs)

@@ -83,6 +83,19 @@
 
   <!-- private per-user -->
   <section id="mineSec" class="hide">
+    <details class="panel">
+      <summary style="cursor:pointer;color:var(--accent);font-size:13px;font-weight:600">⬇️ ตัวเก็บข้อมูล VPS (Collector) — ดาวน์โหลด + Token</summary>
+      <div style="margin-top:12px;font-size:12px;color:var(--muted)">
+        <a href="./FarmCollector_VPS.zip" download style="display:inline-block;background:var(--green);color:#06121f;border-radius:6px;padding:7px 14px;font-weight:600;text-decoration:none">⬇️ ดาวน์โหลดชุดติดตั้ง (.zip)</a>
+        <p style="margin:10px 0 4px">Token ของคุณ (วางในไฟล์ config.local.json):</p>
+        <div style="display:flex;gap:8px">
+          <input id="ctok" readonly onclick="this.select()" style="flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:6px 8px;font-family:monospace;font-size:11px">
+          <button class="btn" onclick="navigator.clipboard.writeText(document.getElementById('ctok').value);this.textContent='คัดลอกแล้ว'">คัดลอก</button>
+        </div>
+        <p style="margin-top:6px;color:var(--muted)">Token นี้เขียนได้เฉพาะพอร์ตของอีเมลคุณ — ปลอดภัยแม้หลุด</p>
+      </div>
+    </details>
+
     <div class="panel">
       <h2>พอร์ตของฉัน (my accounts)</h2>
       <div style="overflow-x:auto"><table id="tbl"><thead></thead><tbody></tbody></table></div>
@@ -204,6 +217,7 @@ function inRange(d,f,t){ return (!f||d>=f)&&(!t||d<=t); }
 
 function renderMine(){
   if(!MINE) return;
+  const tok=document.getElementById("ctok"); if(tok) tok.value = MINE.collector_token || "";
   const accs = MINE.accounts||[];
   const sumBal = accs.reduce((s,a)=>s+(+a.balance||0),0);
   const sumNet = accs.reduce((s,a)=>s+(+a.net_profit||0),0);

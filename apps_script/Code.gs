@@ -72,8 +72,20 @@ function prune_() {
 function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents);
-    if (body.secret !== SHARED_SECRET) return json_({ error: "bad secret" });
     var accounts = body.accounts || [];
+    // Auth: admin shared secret (writes any email) OR a per-user token
+    // (writes ONLY that user's own email). Token = same HMAC as the handoff link,
+    // so a leaked token can only forge the owner's own data = harmless to others.
+    var allowEmail = null; // null = admin, else restrict to this email
+    if (body.secret === SHARED_SECRET) {
+      // admin collector: accept all accounts
+    } else if (body.token) {
+      allowEmail = verifyLm_(body.token);
+      if (!allowEmail) return json_({ error: "bad token" });
+      allowEmail = String(allowEmail).toLowerCase();
+    } else {
+      return json_({ error: "no auth" });
+    }
     var sh = sheet_();
     var data = sh.getDataRange().getValues();
     var ci = colIndex_();
@@ -81,7 +93,11 @@ function doPost(e) {
     var rowOf = {};
     for (var r = 1; r < data.length; r++) rowOf[String(data[r][ci.login])] = r + 1;
 
+    var written = 0;
     accounts.forEach(function (a) {
+      // per-user token may only write its own email's accounts
+      if (allowEmail && String(a.email || "").toLowerCase() !== allowEmail) return;
+      written++;
       var key = String(a.login);
       // keep the ALL-TIME max DD server-side: never let an incoming lower value
       // (e.g. EA reinstalled on a fresh terminal with reset dd_state) overwrite it.
@@ -102,7 +118,7 @@ function doPost(e) {
     // NO prune: rows are KEPT so MaxDD is never lost. rows_() hides stale ports
     // (age > HIDE_SEC) from views; the row + its MaxDD stay in the Sheet and come
     // back when the EA reports again. Delete a row by hand in the Sheet if needed.
-    return json_({ ok: true, n: accounts.length });
+    return json_({ ok: true, n: written });
   } catch (err) {
     return json_({ error: String(err) });
   }
@@ -179,6 +195,7 @@ function mine_(token) {
   var wins = sum("wins"), losses = sum("losses");
   return {
     email: email,
+    collector_token: makeCollectorToken_(email),   // paste into VPS collector config.local.json
     accounts: rs,
     totals: {
       accounts: rs.length,
@@ -194,6 +211,18 @@ function mine_(token) {
 }
 
 // ---------------- auth ----------------
+
+// Build a long-lived (~10y) per-user token for the VPS collector. Same format the
+// collector/verifyLm_ expect: base64url({email,exp}) . HMAC(base64url, FARM_SECRET).
+function makeCollectorToken_(email) {
+  if (!FARM_SECRET || FARM_SECRET.indexOf("PUT_") === 0) return "";
+  var obj = { email: email, exp: Math.floor(Date.now() / 1000) + 3600 * 24 * 3650 };
+  var payloadB64 = Utilities.base64EncodeWebSafe(
+    Utilities.newBlob(JSON.stringify(obj)).getBytes()).replace(/=+$/, "");
+  var sig = Utilities.base64EncodeWebSafe(
+    Utilities.computeHmacSha256Signature(payloadB64, FARM_SECRET)).replace(/=+$/, "");
+  return payloadB64 + "." + sig;
+}
 
 function verify_(token) {
   if (!token) return null;
