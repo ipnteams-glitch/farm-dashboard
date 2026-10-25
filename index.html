@@ -235,7 +235,9 @@ function renderMine(){
     ["balance","Balance"],["_gain","Gain%"]];
   document.querySelector("#tbl thead").innerHTML="<tr>"+cols.map(c=>`<th>${c[1]}</th>`).join("")+"</tr>";
   const tb=document.querySelector("#tbl tbody"); tb.innerHTML="";
-  for(const a of (MINE.accounts||[])){
+  const rows=[...(MINE.accounts||[])].sort((a,b)=>
+    String(a.label||"").localeCompare(String(b.label||""),undefined,{numeric:true,sensitivity:"base"}));
+  for(const a of rows){
     tb.insertAdjacentHTML("beforeend","<tr>"+cols.map(([k])=>{
       if(k==="_status") return a.stale?`<td><span class="tag stale">stale ${a.age_sec}s</span></td>`:`<td><span class="tag live">live</span></td>`;
       if(k==="_gain"){ const g=(+a.balance)?(+a.net_profit)/(+a.balance)*100:0; return `<td class="${cls(g)}">${fmt(g,2)}%</td>`; }
