@@ -204,22 +204,27 @@ function inRange(d,f,t){ return (!f||d>=f)&&(!t||d<=t); }
 
 function renderMine(){
   if(!MINE) return;
-  const t = MINE.totals||{};
+  const accs = MINE.accounts||[];
+  const sumBal = accs.reduce((s,a)=>s+(+a.balance||0),0);
+  const sumNet = accs.reduce((s,a)=>s+(+a.net_profit||0),0);
+  const maxDD  = accs.reduce((m,a)=>Math.max(m,+a.max_equity_dd||0),0);
+  const gainPct = sumBal ? sumNet/sumBal*100 : 0;
   document.getElementById("myCards").innerHTML = [
-    ["Balance Total", fmt(t.balance), ""],
-    ["Equity Total", fmt(t.equity), ""],
-    ["Net Profit", fmt(t.net_profit), cls(t.net_profit)],
-    ["Max Equity DD", fmt(t.max_equity_dd), "neg"],
+    ["Balance Total", fmt(sumBal+sumNet), ""],         // sum balance + sum net
+    ["Gain %", fmt(gainPct,2)+"%", cls(gainPct)],      // sum net / sum balance
+    ["Net Profit", fmt(sumNet), cls(sumNet)],
+    ["Max Equity DD", fmt(maxDD), "neg"],
   ].map(([k,v,c])=>`<div class="card"><div class="k">${k}</div><div class="v ${c}">${v}</div></div>`).join("");
 
   // table
   const cols=[["login","Login"],["label","Label"],["net_profit","Net"],["max_equity_dd","MaxDD"],
-    ["balance","Balance"],["equity","Equity"]];
+    ["balance","Balance"],["_gain","Gain%"]];
   document.querySelector("#tbl thead").innerHTML="<tr>"+cols.map(c=>`<th>${c[1]}</th>`).join("")+"</tr>";
   const tb=document.querySelector("#tbl tbody"); tb.innerHTML="";
   for(const a of (MINE.accounts||[])){
     tb.insertAdjacentHTML("beforeend","<tr>"+cols.map(([k])=>{
       if(k==="_status") return a.stale?`<td><span class="tag stale">stale ${a.age_sec}s</span></td>`:`<td><span class="tag live">live</span></td>`;
+      if(k==="_gain"){ const g=(+a.balance)?(+a.net_profit)/(+a.balance)*100:0; return `<td class="${cls(g)}">${fmt(g,2)}%</td>`; }
       let v=a[k];
       if(["balance","equity","net_profit","closed_max_dd","max_equity_dd","cur_dd","profit_factor"].includes(k)) v=fmt(v);
       else if(k==="win_rate"||k==="max_equity_dd_pct") v=fmt(v,1)+(k.includes("pct")?"%":"");
