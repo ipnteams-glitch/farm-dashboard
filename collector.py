@@ -22,11 +22,16 @@ import argparse
 import glob
 import json
 import os
+import sys
 import time
 import urllib.request
 from datetime import datetime, timezone
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+# folder of this script, or of the .exe when built with PyInstaller (--onefile)
+if getattr(sys, "frozen", False):
+    HERE = os.path.dirname(sys.executable)
+else:
+    HERE = os.path.dirname(os.path.abspath(__file__))
 
 # ---- CONFIG ----
 # Secrets live in config.local.json (gitignored) so they never reach the public
@@ -34,18 +39,31 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 WEBAPP_URL    = "PASTE_APPS_SCRIPT_EXEC_URL_HERE"   # .../exec  (overridden by config.local.json)
 SHARED_SECRET = "PUT_A_LONG_RANDOM_SECRET_HERE"     # must match Code.gs (overridden by config.local.json)
 
-_cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.local.json")
+_cfg_path = os.path.join(HERE, "config.local.json")
 if os.path.exists(_cfg_path):
     with open(_cfg_path, "r", encoding="utf-8") as _f:
         _cfg = json.load(_f)
     WEBAPP_URL    = _cfg.get("WEBAPP_URL", WEBAPP_URL)
     SHARED_SECRET = _cfg.get("SHARED_SECRET", SHARED_SECRET)
 
-# ---- where EA report files live (add paths for extra machines) ----
-GLOBS = [
-    r"C:\Users\User\AppData\Roaming\MetaQuotes\Terminal\7A420438090D9D1897FB4FB211B5EAE9\MQL5\Files\farm_report\report_*.json",
-    r"C:\MT5_Portable_Farm\mt5_*\MQL5\Files\farm_report\report_*.json",
-]
+# ---- where EA report files live: AUTO-DETECT every MT5 terminal on this PC ----
+# No path editing needed. Covers normally-installed terminals (under %APPDATA%)
+# and common portable-install locations. Add extra folders in config.local.json:
+#   {"EXTRA_GLOBS": ["D:\\MyMT5\\*\\MQL5\\Files\\farm_report\\report_*.json"]}
+def _auto_globs():
+    tail = os.path.join("MQL5", "Files", "farm_report", "report_*.json")
+    pats = []
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        pats.append(os.path.join(appdata, "MetaQuotes", "Terminal", "*", tail))
+    # common portable-farm roots (each terminal folder holds its own MQL5\)
+    for root in (r"C:\MT5_Portable_Farm", r"C:\MT5", r"C:\MT5_Farm",
+                 r"C:\Program Files", r"C:\Program Files (x86)"):
+        pats.append(os.path.join(root, "*", tail))
+    return pats
+
+EXTRA_GLOBS = _cfg.get("EXTRA_GLOBS", []) if os.path.exists(_cfg_path) else []
+GLOBS = _auto_globs() + list(EXTRA_GLOBS)
 
 STALE_SEC = 300   # skip reports older than this (EA/terminal offline)
 
