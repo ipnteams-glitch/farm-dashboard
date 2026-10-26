@@ -236,13 +236,13 @@ function renderMine(){
   const accs = MINE.accounts||[];
   const sumBal = accs.reduce((s,a)=>s+(+a.balance||0),0);
   const sumNet = accs.reduce((s,a)=>s+(+a.net_profit||0),0);
-  const maxDD  = accs.reduce((m,a)=>Math.max(m,+a.max_equity_dd||0),0);
+  const maxDDpct = accs.reduce((m,a)=>{const p=(+a.balance)?(+a.max_equity_dd)/(+a.balance)*100:0;return Math.max(m,p);},0);
   const gainPct = sumBal ? sumNet/sumBal*100 : 0;
   document.getElementById("myCards").innerHTML = [
     ["Balance Total", fmt(sumBal+sumNet), ""],         // sum balance + sum net
     ["Gain %", fmt(gainPct,2)+"%", cls(gainPct)],      // sum net / sum balance
     ["Net Profit", fmt(sumNet), cls(sumNet)],
-    ["Max Equity DD", fmt(maxDD), "neg"],
+    ["Max Equity DD", fmt(maxDDpct,2)+"%", "neg"],
   ].map(([k,v,c])=>`<div class="card"><div class="k">${k}</div><div class="v ${c}">${v}</div></div>`).join("");
 
   // table
