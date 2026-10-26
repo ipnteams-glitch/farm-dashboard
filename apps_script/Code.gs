@@ -82,6 +82,7 @@ function doPost(e) {
     } else if (body.token) {
       allowEmail = verifyLm_(body.token);
       if (!allowEmail) return json_({ error: "bad token" });
+      if (tokenScope_(body.token) === "view") return json_({ error: "view token cannot write" });
       allowEmail = String(allowEmail).toLowerCase();
     } else {
       return json_({ error: "no auth" });
@@ -134,6 +135,8 @@ function doGet(e) {
     out = mine_(e.parameter.token);               // per-user: NEVER cached
   } else if (mode === "clear") {
     out = clearPort_(e.parameter.token, e.parameter.login);   // delete own port's row
+  } else if (mode === "shared") {
+    out = shared_(e.parameter.s);                             // read-only share (no email)
   } else {
     // overview is shared + public -> cache 60s so 50 open dashboards all hit
     // cache and the sheet is read at most once per minute, not once per request.
@@ -217,6 +220,7 @@ function mine_(token) {
   return {
     email: email,
     collector_token: makeCollectorToken_(email),   // paste into VPS collector config.local.json
+    share_token: makeShareToken_(email),           // read-only share link (hides email)
     accounts: rs,
     totals: {
       accounts: rs.length,
@@ -231,18 +235,56 @@ function mine_(token) {
   };
 }
 
+// Read-only shared view: same ports as mine_ but WITHOUT the owner email.
+function shared_(stoken) {
+  var email = verifyLm_(stoken);
+  if (!email) return { error: "unauthorized" };
+  var rs = rows_().filter(function (a) {
+    return String(a.email).toLowerCase() === email.toLowerCase();
+  });
+  rs.forEach(function (a) {
+    try { a.daily = JSON.parse(a.daily_json || "[]"); } catch (x) { a.daily = []; }
+    delete a.daily_json;
+    delete a.email;   // hide owner email from the shared link
+  });
+  var sum = function (k) { return rs.reduce(function (s, a) { return s + (Number(a[k]) || 0); }, 0); };
+  var wins = sum("wins"), losses = sum("losses");
+  return {
+    shared: true,
+    accounts: rs,
+    totals: {
+      accounts: rs.length, balance: round2_(sum("balance")), equity: round2_(sum("equity")),
+      net_profit: round2_(sum("net_profit")), floating: round2_(sum("floating")), trades: sum("trades"),
+      win_rate: (wins + losses) ? round2_(wins / (wins + losses) * 100) : 0,
+      max_equity_dd: round2_(rs.reduce(function (m, a) { return Math.max(m, Number(a.max_equity_dd) || 0); }, 0))
+    }
+  };
+}
+
 // ---------------- auth ----------------
 
 // Build a long-lived (~10y) per-user token for the VPS collector. Same format the
 // collector/verifyLm_ expect: base64url({email,exp}) . HMAC(base64url, FARM_SECRET).
-function makeCollectorToken_(email) {
+function signToken_(email, scope) {
   if (!FARM_SECRET || FARM_SECRET.indexOf("PUT_") === 0) return "";
-  var obj = { email: email, exp: Math.floor(Date.now() / 1000) + 3600 * 24 * 3650 };
+  var obj = { email: email, exp: Math.floor(Date.now() / 1000) + 3600 * 24 * 3650, scope: scope };
   var payloadB64 = Utilities.base64EncodeWebSafe(
     Utilities.newBlob(JSON.stringify(obj)).getBytes()).replace(/=+$/, "");
   var sig = Utilities.base64EncodeWebSafe(
     Utilities.computeHmacSha256Signature(payloadB64, FARM_SECRET)).replace(/=+$/, "");
   return payloadB64 + "." + sig;
+}
+function makeCollectorToken_(email) { return signToken_(email, "write"); }  // VPS collector (write)
+function makeShareToken_(email)     { return signToken_(email, "view");  }  // read-only share link
+
+// decode a token's scope WITHOUT re-verifying (call only after verifyLm_ passed)
+function tokenScope_(token) {
+  try {
+    var p = token.substring(0, token.lastIndexOf("."));
+    var mod = p.length % 4, pad = p + (mod ? "====".slice(mod) : "");
+    var j = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(pad)).getDataAsString());
+    return String(j.scope || "");
+  } catch (e) { return ""; }
 }
 
 function verify_(token) {
