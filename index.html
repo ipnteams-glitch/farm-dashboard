@@ -236,7 +236,8 @@ function renderMine(){
   const accs = MINE.accounts||[];
   const sumBal = accs.reduce((s,a)=>s+(+a.balance||0),0);
   const sumNet = accs.reduce((s,a)=>s+(+a.net_profit||0),0);
-  const maxDDpct = accs.reduce((m,a)=>{const p=(+a.balance)?(+a.max_equity_dd)/(+a.balance)*100:0;return Math.max(m,p);},0);
+  const sumMaxDD = accs.reduce((s,a)=>s+(+a.max_equity_dd||0),0);   // total DD money all systems
+  const maxDDpct = sumBal ? sumMaxDD/sumBal*100 : 0;                // vs total Balance
   const gainPct = sumBal ? sumNet/sumBal*100 : 0;
   document.getElementById("myCards").innerHTML = [
     ["Balance Total", fmt(sumBal+sumNet), ""],         // sum balance + sum net
