@@ -247,7 +247,7 @@ function renderMine(){
 
   // table
   const cols=[["login","Login"],["label","Label"],["net_profit","Net"],["_gain","Gain%"],
-    ["balance","Balance"],["max_equity_dd","MaxDD%"]].concat(SHARED?[]:[["_clear","Clear"]]);
+    ["balance","Balance"],["max_equity_dd","MaxDD%"]].concat(SHARED?[]:[["_clear",""]]);
   document.querySelector("#tbl thead").innerHTML="<tr>"+cols.map(c=>`<th>${c[1]}</th>`).join("")+"</tr>";
   const tb=document.querySelector("#tbl tbody"); tb.innerHTML="";
   const rows=[...(MINE.accounts||[])].sort((a,b)=>
@@ -256,7 +256,7 @@ function renderMine(){
     tb.insertAdjacentHTML("beforeend","<tr>"+cols.map(([k])=>{
       if(k==="_status") return a.stale?`<td><span class="tag stale">stale ${a.age_sec}s</span></td>`:`<td><span class="tag live">live</span></td>`;
       if(k==="_gain"){ const g=(+a.balance)?(+a.net_profit)/(+a.balance)*100:0; return `<td class="${cls(g)}">${fmt(g,2)}%</td>`; }
-      if(k==="_clear"){ return `<td><button class="btn" style="padding:3px 8px" onclick="clearPort('${a.login}')">Clear</button></td>`; }
+      if(k==="_clear"){ return `<td style="text-align:center"><button title="ลบพอร์ตนี้" onclick="clearPort('${a.login}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;padding:2px 7px;border-radius:50%;transition:all .15s" onmouseover="this.style.color='#fff';this.style.background='var(--red)'" onmouseout="this.style.color='var(--muted)';this.style.background='none'">×</button></td>`; }
       if(k==="max_equity_dd"){ const p=(+a.balance)?(+a.max_equity_dd)/(+a.balance)*100:0; return `<td class="neg">${fmt(p,2)}%</td>`; }
       let v=a[k];
       if(["balance","equity","net_profit","closed_max_dd","max_equity_dd","cur_dd","profit_factor"].includes(k)) v=fmt(v);
